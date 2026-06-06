@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+
+<meta name="viewport"
+content="width=device-width,
+initial-scale=1.0,
+maximum-scale=1.0,
+user-scalable=no">
+
+<title>AR.js Model Viewer</title>
+
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+<style>
+html, body {
+    margin: 0;
+    overflow: hidden;
+    touch-action: none;
+}
+</style>
+
+<script>
+
+AFRAME.registerComponent('touch-controls', {
+
+    init: function () {
+
+        const rotator = this.el;
+        const model = document.querySelector('#model');
+
+        let previousX = 0;
+        let currentY = 0;
+
+        let previousDistance = 0;
+        let currentScale = 0.03;
+
+        function getDistance(t1, t2) {
+            const dx = t1.clientX - t2.clientX;
+            const dy = t1.clientY - t2.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        window.addEventListener('touchstart', function(e) {
+
+            if (e.touches.length === 1) {
+                previousX = e.touches[0].clientX;
+            }
+
+            if (e.touches.length === 2) {
+                previousDistance =
+                    getDistance(
+                        e.touches[0],
+                        e.touches[1]
+                    );
+            }
+
+        }, {passive:true});
+
+        window.addEventListener('touchmove', function(e) {
+
+            // One finger horizontal rotate
+            if (e.touches.length === 1) {
+
+                const deltaX =
+                    e.touches[0].clientX -
+                    previousX;
+
+                currentY += deltaX * 0.25;
+
+                rotator.object3D.rotation.z =
+                    THREE.MathUtils.degToRad(currentY);
+
+                previousX =
+                    e.touches[0].clientX;
+            }
+
+            // Two finger pinch zoom
+            if (e.touches.length === 2) {
+
+                const distance =
+                    getDistance(
+                        e.touches[0],
+                        e.touches[1]
+                    );
+
+                const delta =
+                    distance -
+                    previousDistance;
+
+                currentScale +=
+                    delta * 0.00008;
+
+                currentScale =
+                    Math.max(
+                        0.01,
+                        Math.min(0.08, currentScale)
+                    );
+
+                model.setAttribute(
+                    'scale',
+                    `${currentScale}
+                     ${currentScale}
+                     ${currentScale}`
+                );
+
+                previousDistance =
+                    distance;
+            }
+
+        }, {passive:true});
+
+    }
+
+});
+
+</script>
+
+</head>
+
+<body>
+
+<a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="
+        antialias: true;
+        logarithmicDepthBuffer: true;
+    "
+    arjs="
+        sourceType: webcam;
+        debugUIEnabled: false;
+    ">
+
+    <a-marker
+        preset="hiro"
+        smooth="true"
+        smoothCount="50"
+        smoothTolerance="0.001"
+        smoothThreshold="10">
+
+        <!-- Rotating Parent -->
+        <a-entity
+            id="rotator"
+            touch-controls>
+
+            <!-- Your Model -->
+            <a-entity
+                id="model"
+                gltf-model="url(model.glb)"
+                position="0 0 0"
+                rotation="-90 0 -10"
+                scale="0.03 0.03 0.03">
+            </a-entity>
+
+        </a-entity>
+
+    </a-marker>
+
+    <a-entity camera></a-entity>
+
+</a-scene>
+
+</body>
+</html>
