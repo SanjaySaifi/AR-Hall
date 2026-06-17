@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 
@@ -7,18 +6,12 @@
 <meta charset="utf-8">
 
 <meta name="viewport"
-
 content="width=device-width,
-
 initial-scale=1.0,
-
 maximum-scale=1.0,
-
 user-scalable=no">
 
-
 <title>Uji Obaku Plaza AR</title>
-
 
 <!-- LOCAL LIBRARIES -->
 
@@ -42,8 +35,6 @@ overflow:hidden;
 touch-action:none;
 
 }
-
-
 
 #title{
 
@@ -73,8 +64,6 @@ text-align:center;
 
 }
 
-
-
 #buttons{
 
 position:absolute;
@@ -91,8 +80,6 @@ z-index:999;
 
 }
 
-
-
 #infoBtn{
 
 padding:12px 25px;
@@ -108,8 +95,6 @@ border-radius:10px;
 cursor:pointer;
 
 }
-
-
 
 #popup{
 
@@ -147,38 +132,23 @@ display:none;
 
 <script>
 
-
-AFRAME.registerComponent('touch-controls', {
-
+AFRAME.registerComponent('pinch-zoom', {
 
 init:function(){
 
-
-const rotator=this.el;
-
-const model=document.querySelector("#model");
-
-
-
-let previousX=0;
-
-let currentY=0;
-
-
+const el=this.el;
 
 let previousDistance=0;
 
-let currentScale=0.03;
+let currentScale=0.02;
 
 
 
 function getDistance(t1,t2){
 
-
 const dx=t1.clientX-t2.clientX;
 
 const dy=t1.clientY-t2.clientY;
-
 
 return Math.sqrt(
 
@@ -187,7 +157,6 @@ dx*dx+
 dy*dy
 
 );
-
 
 }
 
@@ -199,22 +168,7 @@ window.addEventListener(
 
 function(e){
 
-
-
-if(e.touches.length===1){
-
-
-previousX=
-
-e.touches[0].clientX;
-
-
-}
-
-
-
 if(e.touches.length===2){
-
 
 previousDistance=
 
@@ -226,10 +180,7 @@ e.touches[1]
 
 );
 
-
 }
-
-
 
 },
 
@@ -246,58 +197,9 @@ window.addEventListener(
 
 function(e){
 
+if(e.touches.length!==2)
 
-
-// ROTATE
-
-
-if(e.touches.length===1){
-
-
-const deltaX=
-
-e.touches[0].clientX
-
--
-
-previousX;
-
-
-
-currentY+=
-
-deltaX*0.25;
-
-
-
-rotator.object3D.rotation.y=
-
-THREE.MathUtils
-
-.degToRad(
-
-currentY
-
-);
-
-
-
-previousX=
-
-e.touches[0]
-
-.clientX;
-
-
-}
-
-
-
-
-// ZOOM
-
-
-if(e.touches.length===2){
+return;
 
 
 
@@ -347,15 +249,13 @@ currentScale
 
 
 
-model.setAttribute(
+el.object3D.scale.set(
 
-"scale",
+currentScale,
 
-`${currentScale}
+currentScale,
 
- ${currentScale}
-
- ${currentScale}`
+currentScale
 
 );
 
@@ -365,24 +265,15 @@ previousDistance=
 
 distance;
 
-
-}
-
-
-
 },
 
 {passive:true}
 
 );
 
-
-
 }
 
-
 });
-
 
 </script>
 
@@ -407,10 +298,7 @@ Uji Obaku Plaza
 
 
 
-
-
 <div id="popup">
-
 
 <b>
 
@@ -422,24 +310,17 @@ Uji Obaku Plaza
 
 </b>
 
-
 <br><br>
 
-
 Uji Obaku Plaza, inaugurated in September 2009, is a multipurpose facility at Kyoto University's Uji Campus featuring Kihada Hall, seminar rooms, collaborative spaces, and dining facilities.
-
 
 </div>
 
 
 
-
-
 <div id="buttons">
 
-
 <button id="infoBtn">
-
 
 Information
 
@@ -447,26 +328,46 @@ Information
 
 情報
 
-
 </button>
-
 
 </div>
 
 
 
-
-
 <a-scene
 
-mindar-image="imageTargetSrc: ./target.mind;"
+mindar-image="
+
+imageTargetSrc: ./target.mind;
+
+filterMinCF:0.0001;
+
+filterBeta:0.001;
+
+warmupTolerance:5;
+
+missTolerance:5;
+
+maxTrack:1;
+
+"
+
+renderer="
+
+colorManagement:true;
+
+physicallyCorrectLights:true;
+
+precision:mediump;
+
+"
 
 vr-mode-ui="enabled:false"
 
 device-orientation-permission-ui="enabled:false"
 
-
 >
+
 
 
 <a-camera
@@ -487,27 +388,35 @@ mindar-image-target="targetIndex:0">
 
 
 
-<!-- ROTATING PARENT -->
-
+<!-- AUTOMATIC MUSEUM ROTATION -->
 
 <a-entity
 
-id="rotator"
+animation="
 
-touch-controls>
+property: rotation;
 
+to: 0 360 0;
 
+loop: true;
 
-<!-- YOUR MODEL -->
+dur: 30000;
+
+easing: linear;
+
+">
+
 
 
 <a-entity
 
 id="model"
 
+pinch-zoom
+
 gltf-model="url(model.glb)"
 
-position="0 0 0"
+position="0 0.08 0"
 
 rotation="0 -90 0"
 
@@ -529,13 +438,9 @@ scale="0.02 0.02 0.02">
 
 
 
-
 <script>
 
-
 let showInfo=false;
-
-
 
 document
 
@@ -547,11 +452,7 @@ document
 
 .onclick=function(){
 
-
-
 showInfo=!showInfo;
-
-
 
 document
 
@@ -563,7 +464,6 @@ document
 
 .style.display=
 
-
 showInfo
 
 ?
@@ -574,10 +474,7 @@ showInfo
 
 "none";
 
-
-
 }
-
 
 </script>
 
@@ -586,4 +483,3 @@ showInfo
 </body>
 
 </html>
-```
