@@ -1,484 +1,341 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
 
-<meta charset="utf-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta name="viewport"
-content="width=device-width,
-initial-scale=1.0,
-maximum-scale=1.0,
-user-scalable=no">
-
-<title>Uji Obaku Plaza AR</title>
-
-<!-- LOCAL LIBRARIES -->
-
-<script src="./libs/aframe.min.js"></script>
-
-<script src="./libs/mindar-image-aframe.prod.js"></script>
-
+<title>Spatial Awareness Map (SAM)</title>
 
 <style>
 
-html,body{
-
+*{
 margin:0;
+padding:0;
+box-sizing:border-box;
+font-family:Arial,Helvetica,sans-serif;
+}
 
-width:100%;
+body{
 
-height:100%;
-
+background:#000;
 overflow:hidden;
-
-touch-action:none;
-
-}
-
-#title{
-
-position:absolute;
-
-top:10px;
-
-left:50%;
-
-transform:translateX(-50%);
-
-z-index:999;
-
-background:rgba(255,255,255,0.85);
-
-padding:10px 20px;
-
-border-radius:15px;
-
-font-family:Arial,sans-serif;
-
-font-size:22px;
-
-font-weight:bold;
-
-text-align:center;
+color:white;
 
 }
 
-#buttons{
+#camera{
 
-position:absolute;
-
-bottom:20px;
-
+position:fixed;
+top:0;
+left:0;
 width:100%;
-
-display:flex;
-
-justify-content:center;
-
-z-index:999;
+height:100%;
+object-fit:cover;
+background:black;
+z-index:1;
 
 }
 
-#infoBtn{
-
-padding:12px 25px;
-
-font-size:16px;
-
-background:#87CEEB;
-
-border:none;
-
-border-radius:10px;
-
-cursor:pointer;
-
-}
-
-#popup{
+#overlay{
 
 position:absolute;
+top:0;
+left:0;
+width:100%;
+height:100%;
+pointer-events:none;
+z-index:2;
 
-bottom:90px;
+}
 
-left:50%;
+#topPanel{
 
-transform:translateX(-50%);
+position:absolute;
+top:15px;
+left:15px;
+right:15px;
 
-width:320px;
+background:rgba(0,0,0,0.45);
 
-z-index:999;
-
-background:rgba(255,255,255,0.85);
+backdrop-filter:blur(12px);
 
 padding:15px;
 
 border-radius:15px;
 
-font-family:Arial,sans-serif;
+z-index:10;
+
+}
+
+#title{
+
+font-size:24px;
+font-weight:bold;
+
+}
+
+#subtitle{
+
+margin-top:3px;
+
+font-size:14px;
+
+color:#dddddd;
+
+}
+
+#status{
+
+margin-top:12px;
+
+display:grid;
+
+grid-template-columns:1fr 1fr;
+
+row-gap:8px;
+
+column-gap:15px;
 
 font-size:15px;
 
-text-align:center;
+}
 
-display:none;
+.green{
+
+color:#00ff66;
+
+font-weight:bold;
+
+}
+
+.red{
+
+color:#ff4444;
+
+font-weight:bold;
+
+}
+
+#bottomPanel{
+
+position:absolute;
+
+bottom:20px;
+
+left:20px;
+
+right:20px;
+
+z-index:10;
+
+display:flex;
+
+justify-content:center;
+
+}
+
+button{
+
+padding:18px 35px;
+
+font-size:18px;
+
+border:none;
+
+border-radius:40px;
+
+background:#0080ff;
+
+color:white;
+
+cursor:pointer;
+
+box-shadow:0px 5px 15px rgba(0,0,0,.35);
+
+}
+
+button:hover{
+
+background:#0060dd;
 
 }
 
 </style>
 
-
-
-<script>
-
-AFRAME.registerComponent('pinch-zoom', {
-
-init:function(){
-
-const el=this.el;
-
-let previousDistance=0;
-
-let currentScale=0.02;
-
-
-
-function getDistance(t1,t2){
-
-const dx=t1.clientX-t2.clientX;
-
-const dy=t1.clientY-t2.clientY;
-
-return Math.sqrt(
-
-dx*dx+
-
-dy*dy
-
-);
-
-}
-
-
-
-window.addEventListener(
-
-"touchstart",
-
-function(e){
-
-if(e.touches.length===2){
-
-previousDistance=
-
-getDistance(
-
-e.touches[0],
-
-e.touches[1]
-
-);
-
-}
-
-},
-
-{passive:true}
-
-);
-
-
-
-
-window.addEventListener(
-
-"touchmove",
-
-function(e){
-
-if(e.touches.length!==2)
-
-return;
-
-
-
-const distance=
-
-getDistance(
-
-e.touches[0],
-
-e.touches[1]
-
-);
-
-
-
-const delta=
-
-distance
-
--
-
-previousDistance;
-
-
-
-currentScale+=
-
-delta*0.00008;
-
-
-
-currentScale=
-
-Math.max(
-
-0.01,
-
-Math.min(
-
-0.08,
-
-currentScale
-
-)
-
-);
-
-
-
-el.object3D.scale.set(
-
-currentScale,
-
-currentScale,
-
-currentScale
-
-);
-
-
-
-previousDistance=
-
-distance;
-
-},
-
-{passive:true}
-
-);
-
-}
-
-});
-
-</script>
-
-
 </head>
-
-
 
 <body>
 
+<video id="camera" autoplay playsinline muted></video>
 
+<canvas id="overlay"></canvas>
+
+<div id="topPanel">
 
 <div id="title">
 
-Uji Obaku Plaza
-
-<br>
-
-宇治おうばくプラザ
+Spatial Awareness Map
 
 </div>
 
+<div id="subtitle">
 
-
-<div id="popup">
-
-<b>
-
-Uji Obaku Plaza
-
-<br>
-
-宇治おうばくプラザ
-
-</b>
-
-<br><br>
-
-Uji Obaku Plaza, inaugurated in September 2009, is a multipurpose facility at Kyoto University's Uji Campus featuring Kihada Hall, seminar rooms, collaborative spaces, and dining facilities.
+Browser-based Geospatial Guidance System
 
 </div>
 
+<div id="status">
 
+<div>Camera</div>
+<div id="cameraStatus" class="red">Waiting...</div>
 
-<div id="buttons">
+<div>GPS</div>
+<div id="gpsStatus" class="red">Waiting...</div>
 
-<button id="infoBtn">
+<div>Latitude</div>
+<div id="lat">--</div>
 
-Information
+<div>Longitude</div>
+<div id="lon">--</div>
 
-<br>
+<div>Accuracy</div>
+<div id="acc">--</div>
 
-情報
+<div>Heading</div>
+<div id="heading">--</div>
+
+</div>
+
+</div>
+
+<div id="bottomPanel">
+
+<button id="calibrate">
+
+Start Calibration
 
 </button>
 
 </div>
 
-
-
-<a-scene
-
-mindar-image="
-
-imageTargetSrc: ./target.mind;
-
-filterMinCF:0.0001;
-
-filterBeta:0.001;
-
-warmupTolerance:5;
-
-missTolerance:5;
-
-maxTrack:1;
-
-"
-
-renderer="
-
-colorManagement:true;
-
-physicallyCorrectLights:true;
-
-precision:mediump;
-
-"
-
-vr-mode-ui="enabled:false"
-
-device-orientation-permission-ui="enabled:false"
-
->
-
-
-
-<a-camera
-
-position="0 0 0"
-
-look-controls="enabled:false">
-
-</a-camera>
-
-
-
-
-
-<a-entity
-
-mindar-image-target="targetIndex:0">
-
-
-
-<!-- AUTOMATIC MUSEUM ROTATION -->
-
-<a-entity
-
-animation="
-
-property: rotation;
-
-to: 0 360 0;
-
-loop: true;
-
-dur: 30000;
-
-easing: linear;
-
-">
-
-
-
-<a-entity
-
-id="model"
-
-pinch-zoom
-
-gltf-model="url(model.glb)"
-
-position="0 0.08 0"
-
-rotation="0 -90 0"
-
-scale="0.02 0.02 0.02">
-
-</a-entity>
-
-
-
-</a-entity>
-
-
-
-</a-entity>
-
-
-
-</a-scene>
-
-
-
 <script>
 
-let showInfo=false;
+const video=document.getElementById("camera");
 
-document
+async function startCamera(){
 
-.getElementById(
+try{
 
-"infoBtn"
+const stream=await navigator.mediaDevices.getUserMedia({
 
-)
+video:{
+facingMode:"environment"
+},
 
-.onclick=function(){
+audio:false
 
-showInfo=!showInfo;
+});
 
-document
+video.srcObject=stream;
 
-.getElementById(
+document.getElementById("cameraStatus").innerHTML="Running";
 
-"popup"
-
-)
-
-.style.display=
-
-showInfo
-
-?
-
-"block"
-
-:
-
-"none";
+document.getElementById("cameraStatus").className="green";
 
 }
 
+catch(e){
+
+document.getElementById("cameraStatus").innerHTML="Permission Denied";
+
+}
+
+}
+
+function startGPS(){
+
+if(!navigator.geolocation){
+
+alert("Geolocation not supported");
+
+return;
+
+}
+
+navigator.geolocation.watchPosition(
+
+function(position){
+
+document.getElementById("gpsStatus").innerHTML="Locked";
+
+document.getElementById("gpsStatus").className="green";
+
+document.getElementById("lat").innerHTML=
+position.coords.latitude.toFixed(6);
+
+document.getElementById("lon").innerHTML=
+position.coords.longitude.toFixed(6);
+
+document.getElementById("acc").innerHTML=
+"± "+position.coords.accuracy.toFixed(1)+" m";
+
+},
+
+function(error){
+
+document.getElementById("gpsStatus").innerHTML="Unavailable";
+
+}
+
+);
+
+}
+
+function startCompass(){
+
+if(window.DeviceOrientationEvent){
+
+window.addEventListener(
+
+'deviceorientation',
+
+function(event){
+
+if(event.alpha!=null){
+
+document.getElementById("heading").innerHTML=
+
+Math.round(event.alpha)+"°";
+
+}
+
+}
+
+);
+
+}
+
+}
+
+document.getElementById("calibrate").onclick=function(){
+
+alert(
+
+"Calibration module will be implemented in Version 2."
+
+);
+
+};
+
+startCamera();
+
+startGPS();
+
+startCompass();
+
 </script>
-
-
 
 </body>
 
