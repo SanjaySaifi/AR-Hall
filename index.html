@@ -164,6 +164,80 @@ background:#0060dd;
 
 </style>
 
+
+<script async src="https://docs.opencv.org/4.x/opencv.js">
+let cvReady=false;
+let lastTime=performance.now();
+
+function waitForOpenCV(){
+ if(window.cv && cv.Mat){
+   cvReady=true;
+   document.getElementById("cvStatus").innerHTML="Ready";
+   document.getElementById("cvStatus").className="green";
+   requestAnimationFrame(processFrame);
+ }else{
+   setTimeout(waitForOpenCV,200);
+ }
+}
+waitForOpenCV();
+
+function processFrame(){
+ if(!cvReady || video.readyState<2){
+   requestAnimationFrame(processFrame);return;
+ }
+ const overlay=document.getElementById("overlay");
+ overlay.width=video.videoWidth;
+ overlay.height=video.videoHeight;
+ const p=document.getElementById("processing");
+ p.width=video.videoWidth;
+ p.height=video.videoHeight;
+ const ctx=p.getContext("2d");
+ ctx.drawImage(video,0,0,p.width,p.height);
+
+ let src=cv.imread(p);
+ let gray=new cv.Mat();
+ let thr=new cv.Mat();
+ cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+ cv.adaptiveThreshold(gray,thr,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY_INV,21,5);
+ let contours=new cv.MatVector();
+ let hierarchy=new cv.Mat();
+ cv.findContours(thr,contours,hierarchy,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE);
+ let octx=overlay.getContext("2d");
+ octx.clearRect(0,0,overlay.width,overlay.height);
+ octx.strokeStyle="#00ff00";
+ octx.lineWidth=2;
+ let count=0;
+ for(let i=0;i<contours.size();i++){
+   let c=contours.get(i);
+   let peri=cv.arcLength(c,true);
+   let approx=new cv.Mat();
+   cv.approxPolyDP(c,approx,0.02*peri,true);
+   if(approx.rows==4){
+      let area=cv.contourArea(approx);
+      if(area>500){
+        let pts=[];
+        for(let j=0;j<4;j++){
+          pts.push({x:approx.intPtr(j,0)[0],y:approx.intPtr(j,0)[1]});
+        }
+        octx.beginPath();
+        octx.moveTo(pts[0].x,pts[0].y);
+        for(let k=1;k<4;k++)octx.lineTo(pts[k].x,pts[k].y);
+        octx.closePath();
+        octx.stroke();
+        count++;
+      }
+   }
+   approx.delete(); c.delete();
+ }
+ document.getElementById("contours").innerHTML=count;
+ let now=performance.now();
+ document.getElementById("fps").innerHTML=(1000/(now-lastTime)).toFixed(1);
+ lastTime=now;
+ src.delete();gray.delete();thr.delete();contours.delete();hierarchy.delete();
+ requestAnimationFrame(processFrame);
+}
+
+</script>
 </head>
 
 <body>
@@ -171,6 +245,7 @@ background:#0060dd;
 <video id="camera" autoplay playsinline muted></video>
 
 <canvas id="overlay"></canvas>
+<canvas id="processing" style="display:none;"></canvas>
 
 <div id="topPanel">
 
@@ -205,6 +280,9 @@ Browser-based Geospatial Guidance System
 
 <div>Heading</div>
 <div id="heading">--</div>
+<div>OpenCV</div><div id="cvStatus" class="red">Loading...</div>
+<div>Contours</div><div id="contours">0</div>
+<div>FPS</div><div id="fps">0</div>
 
 </div>
 
@@ -334,6 +412,78 @@ startCamera();
 startGPS();
 
 startCompass();
+
+
+let cvReady=false;
+let lastTime=performance.now();
+
+function waitForOpenCV(){
+ if(window.cv && cv.Mat){
+   cvReady=true;
+   document.getElementById("cvStatus").innerHTML="Ready";
+   document.getElementById("cvStatus").className="green";
+   requestAnimationFrame(processFrame);
+ }else{
+   setTimeout(waitForOpenCV,200);
+ }
+}
+waitForOpenCV();
+
+function processFrame(){
+ if(!cvReady || video.readyState<2){
+   requestAnimationFrame(processFrame);return;
+ }
+ const overlay=document.getElementById("overlay");
+ overlay.width=video.videoWidth;
+ overlay.height=video.videoHeight;
+ const p=document.getElementById("processing");
+ p.width=video.videoWidth;
+ p.height=video.videoHeight;
+ const ctx=p.getContext("2d");
+ ctx.drawImage(video,0,0,p.width,p.height);
+
+ let src=cv.imread(p);
+ let gray=new cv.Mat();
+ let thr=new cv.Mat();
+ cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+ cv.adaptiveThreshold(gray,thr,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY_INV,21,5);
+ let contours=new cv.MatVector();
+ let hierarchy=new cv.Mat();
+ cv.findContours(thr,contours,hierarchy,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE);
+ let octx=overlay.getContext("2d");
+ octx.clearRect(0,0,overlay.width,overlay.height);
+ octx.strokeStyle="#00ff00";
+ octx.lineWidth=2;
+ let count=0;
+ for(let i=0;i<contours.size();i++){
+   let c=contours.get(i);
+   let peri=cv.arcLength(c,true);
+   let approx=new cv.Mat();
+   cv.approxPolyDP(c,approx,0.02*peri,true);
+   if(approx.rows==4){
+      let area=cv.contourArea(approx);
+      if(area>500){
+        let pts=[];
+        for(let j=0;j<4;j++){
+          pts.push({x:approx.intPtr(j,0)[0],y:approx.intPtr(j,0)[1]});
+        }
+        octx.beginPath();
+        octx.moveTo(pts[0].x,pts[0].y);
+        for(let k=1;k<4;k++)octx.lineTo(pts[k].x,pts[k].y);
+        octx.closePath();
+        octx.stroke();
+        count++;
+      }
+   }
+   approx.delete(); c.delete();
+ }
+ document.getElementById("contours").innerHTML=count;
+ let now=performance.now();
+ document.getElementById("fps").innerHTML=(1000/(now-lastTime)).toFixed(1);
+ lastTime=now;
+ src.delete();gray.delete();thr.delete();contours.delete();hierarchy.delete();
+ requestAnimationFrame(processFrame);
+}
 
 </script>
 
