@@ -1,492 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Spatial Awareness Map (SAM)</title>
 
+<script async src="https://docs.opencv.org/4.x/opencv.js"
+onload="opencvLoaded()"></script>
+
 <style>
-
-*{
-margin:0;
-padding:0;
-box-sizing:border-box;
-font-family:Arial,Helvetica,sans-serif;
-}
-
-body{
-
-background:#000;
-overflow:hidden;
-color:white;
-
-}
-
-#camera{
-
-position:fixed;
-top:0;
-left:0;
-width:100%;
-height:100%;
-object-fit:cover;
-background:black;
-z-index:1;
-
-}
-
-#overlay{
-
-position:absolute;
-top:0;
-left:0;
-width:100%;
-height:100%;
-pointer-events:none;
-z-index:2;
-
-}
-
-#topPanel{
-
-position:absolute;
-top:15px;
-left:15px;
-right:15px;
-
-background:rgba(0,0,0,0.45);
-
-backdrop-filter:blur(12px);
-
-padding:15px;
-
-border-radius:15px;
-
-z-index:10;
-
-}
-
-#title{
-
-font-size:24px;
-font-weight:bold;
-
-}
-
-#subtitle{
-
-margin-top:3px;
-
-font-size:14px;
-
-color:#dddddd;
-
-}
-
-#status{
-
-margin-top:12px;
-
-display:grid;
-
-grid-template-columns:1fr 1fr;
-
-row-gap:8px;
-
-column-gap:15px;
-
+html,body{margin:0;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#000}
+#camera,#overlay{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+#overlay{pointer-events:none}
+#info{
+position:absolute;top:15px;left:15px;
+background:rgba(0,0,0,.45);
+backdrop-filter:blur(10px);
+padding:12px 16px;
+border-radius:12px;
+color:#fff;
 font-size:15px;
-
+line-height:1.6;
+min-width:190px;
 }
-
-.green{
-
-color:#00ff66;
-
-font-weight:bold;
-
-}
-
-.red{
-
-color:#ff4444;
-
-font-weight:bold;
-
-}
-
-#bottomPanel{
-
+#title{font-weight:bold;font-size:18px;margin-bottom:6px}
+#debug{
 position:absolute;
-
-bottom:20px;
-
-left:20px;
-
-right:20px;
-
-z-index:10;
-
-display:flex;
-
-justify-content:center;
-
+bottom:15px;
+left:15px;
+background:rgba(0,0,0,.45);
+padding:6px 10px;
+border-radius:8px;
+font-size:13px;
+color:#0f0;
 }
-
-button{
-
-padding:18px 35px;
-
-font-size:18px;
-
-border:none;
-
-border-radius:40px;
-
-background:#0080ff;
-
-color:white;
-
-cursor:pointer;
-
-box-shadow:0px 5px 15px rgba(0,0,0,.35);
-
-}
-
-button:hover{
-
-background:#0060dd;
-
-}
-
 </style>
-
-
-<script async src="https://docs.opencv.org/4.x/opencv.js">
-let cvReady=false;
-let lastTime=performance.now();
-
-function waitForOpenCV(){
- if(window.cv && cv.Mat){
-   cvReady=true;
-   document.getElementById("cvStatus").innerHTML="Ready";
-   document.getElementById("cvStatus").className="green";
-   requestAnimationFrame(processFrame);
- }else{
-   setTimeout(waitForOpenCV,200);
- }
-}
-waitForOpenCV();
-
-function processFrame(){
- if(!cvReady || video.readyState<2){
-   requestAnimationFrame(processFrame);return;
- }
- const overlay=document.getElementById("overlay");
- overlay.width=video.videoWidth;
- overlay.height=video.videoHeight;
- const p=document.getElementById("processing");
- p.width=video.videoWidth;
- p.height=video.videoHeight;
- const ctx=p.getContext("2d");
- ctx.drawImage(video,0,0,p.width,p.height);
-
- let src=cv.imread(p);
- let gray=new cv.Mat();
- let thr=new cv.Mat();
- cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
- cv.adaptiveThreshold(gray,thr,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY_INV,21,5);
- let contours=new cv.MatVector();
- let hierarchy=new cv.Mat();
- cv.findContours(thr,contours,hierarchy,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE);
- let octx=overlay.getContext("2d");
- octx.clearRect(0,0,overlay.width,overlay.height);
- octx.strokeStyle="#00ff00";
- octx.lineWidth=2;
- let count=0;
- for(let i=0;i<contours.size();i++){
-   let c=contours.get(i);
-   let peri=cv.arcLength(c,true);
-   let approx=new cv.Mat();
-   cv.approxPolyDP(c,approx,0.02*peri,true);
-   if(approx.rows==4){
-      let area=cv.contourArea(approx);
-      if(area>500){
-        let pts=[];
-        for(let j=0;j<4;j++){
-          pts.push({x:approx.intPtr(j,0)[0],y:approx.intPtr(j,0)[1]});
-        }
-        octx.beginPath();
-        octx.moveTo(pts[0].x,pts[0].y);
-        for(let k=1;k<4;k++)octx.lineTo(pts[k].x,pts[k].y);
-        octx.closePath();
-        octx.stroke();
-        count++;
-      }
-   }
-   approx.delete(); c.delete();
- }
- document.getElementById("contours").innerHTML=count;
- let now=performance.now();
- document.getElementById("fps").innerHTML=(1000/(now-lastTime)).toFixed(1);
- lastTime=now;
- src.delete();gray.delete();thr.delete();contours.delete();hierarchy.delete();
- requestAnimationFrame(processFrame);
-}
-
-</script>
 </head>
-
 <body>
 
 <video id="camera" autoplay playsinline muted></video>
-
 <canvas id="overlay"></canvas>
-<canvas id="processing" style="display:none;"></canvas>
+<canvas id="processing" hidden></canvas>
 
-<div id="topPanel">
-
-<div id="title">
-
-Spatial Awareness Map
-
+<div id="info">
+<div id="title">Spatial Awareness Map</div>
+<div>Lat : <span id="lat">--</span></div>
+<div>Lon : <span id="lon">--</span></div>
+<div>Acc : <span id="acc">--</span></div>
 </div>
 
-<div id="subtitle">
-
-Browser-based Geospatial Guidance System
-
-</div>
-
-<div id="status">
-
-<div>Camera</div>
-<div id="cameraStatus" class="red">Waiting...</div>
-
-<div>GPS</div>
-<div id="gpsStatus" class="red">Waiting...</div>
-
-<div>Latitude</div>
-<div id="lat">--</div>
-
-<div>Longitude</div>
-<div id="lon">--</div>
-
-<div>Accuracy</div>
-<div id="acc">--</div>
-
-<div>Heading</div>
-<div id="heading">--</div>
-<div>OpenCV</div><div id="cvStatus" class="red">Loading...</div>
-<div>Contours</div><div id="contours">0</div>
-<div>FPS</div><div id="fps">0</div>
-
-</div>
-
-</div>
-
-<div id="bottomPanel">
-
-<button id="calibrate">
-
-Start Calibration
-
-</button>
-
-</div>
+<div id="debug">Loading OpenCV...</div>
 
 <script>
-
 const video=document.getElementById("camera");
+const overlay=document.getElementById("overlay");
+const proc=document.getElementById("processing");
+const dbg=document.getElementById("debug");
+let cvReady=false;
 
 async function startCamera(){
-
-try{
-
-const stream=await navigator.mediaDevices.getUserMedia({
-
-video:{
-facingMode:"environment"
-},
-
-audio:false
-
-});
-
-video.srcObject=stream;
-
-document.getElementById("cameraStatus").innerHTML="Running";
-
-document.getElementById("cameraStatus").className="green";
-
-}
-
-catch(e){
-
-document.getElementById("cameraStatus").innerHTML="Permission Denied";
-
-}
-
+ const s=await navigator.mediaDevices.getUserMedia({
+   video:{facingMode:{ideal:"environment"}},audio:false});
+ video.srcObject=s;
 }
 
 function startGPS(){
-
-if(!navigator.geolocation){
-
-alert("Geolocation not supported");
-
-return;
-
+ navigator.geolocation.watchPosition(p=>{
+  lat.textContent=p.coords.latitude.toFixed(6);
+  lon.textContent=p.coords.longitude.toFixed(6);
+  acc.textContent="±"+p.coords.accuracy.toFixed(1)+" m";
+ });
 }
 
-navigator.geolocation.watchPosition(
-
-function(position){
-
-document.getElementById("gpsStatus").innerHTML="Locked";
-
-document.getElementById("gpsStatus").className="green";
-
-document.getElementById("lat").innerHTML=
-position.coords.latitude.toFixed(6);
-
-document.getElementById("lon").innerHTML=
-position.coords.longitude.toFixed(6);
-
-document.getElementById("acc").innerHTML=
-"± "+position.coords.accuracy.toFixed(1)+" m";
-
-},
-
-function(error){
-
-document.getElementById("gpsStatus").innerHTML="Unavailable";
-
+function opencvLoaded(){
+ const wait=()=>{
+   if(window.cv && cv.Mat){
+      cv.onRuntimeInitialized=()=>{
+        cvReady=true;
+        dbg.textContent="OpenCV Ready";
+        requestAnimationFrame(processFrame);
+      };
+   }else setTimeout(wait,100);
+ };
+ wait();
 }
-
-);
-
-}
-
-function startCompass(){
-
-if(window.DeviceOrientationEvent){
-
-window.addEventListener(
-
-'deviceorientation',
-
-function(event){
-
-if(event.alpha!=null){
-
-document.getElementById("heading").innerHTML=
-
-Math.round(event.alpha)+"°";
-
-}
-
-}
-
-);
-
-}
-
-}
-
-document.getElementById("calibrate").onclick=function(){
-
-alert(
-
-"Calibration module will be implemented in Version 2."
-
-);
-
-};
-
-startCamera();
-
-startGPS();
-
-startCompass();
-
-
-let cvReady=false;
-let lastTime=performance.now();
-
-function waitForOpenCV(){
- if(window.cv && cv.Mat){
-   cvReady=true;
-   document.getElementById("cvStatus").innerHTML="Ready";
-   document.getElementById("cvStatus").className="green";
-   requestAnimationFrame(processFrame);
- }else{
-   setTimeout(waitForOpenCV,200);
- }
-}
-waitForOpenCV();
 
 function processFrame(){
  if(!cvReady || video.readyState<2){
    requestAnimationFrame(processFrame);return;
  }
- const overlay=document.getElementById("overlay");
+
  overlay.width=video.videoWidth;
  overlay.height=video.videoHeight;
- const p=document.getElementById("processing");
- p.width=video.videoWidth;
- p.height=video.videoHeight;
- const ctx=p.getContext("2d");
- ctx.drawImage(video,0,0,p.width,p.height);
+ proc.width=video.videoWidth;
+ proc.height=video.videoHeight;
 
- let src=cv.imread(p);
+ const pctx=proc.getContext("2d");
+ pctx.drawImage(video,0,0);
+
+ let src=cv.imread(proc);
  let gray=new cv.Mat();
  let thr=new cv.Mat();
  cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
- cv.adaptiveThreshold(gray,thr,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY_INV,21,5);
+ cv.adaptiveThreshold(gray,thr,255,
+   cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+   cv.THRESH_BINARY_INV,21,5);
+
  let contours=new cv.MatVector();
  let hierarchy=new cv.Mat();
- cv.findContours(thr,contours,hierarchy,cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE);
- let octx=overlay.getContext("2d");
- octx.clearRect(0,0,overlay.width,overlay.height);
- octx.strokeStyle="#00ff00";
- octx.lineWidth=2;
- let count=0;
+ cv.findContours(thr,contours,hierarchy,
+   cv.RETR_TREE,cv.CHAIN_APPROX_SIMPLE);
+
+ const ctx=overlay.getContext("2d");
+ ctx.clearRect(0,0,overlay.width,overlay.height);
+ ctx.strokeStyle="#00ff00";
+ ctx.lineWidth=2;
+
+ let squares=0;
  for(let i=0;i<contours.size();i++){
    let c=contours.get(i);
-   let peri=cv.arcLength(c,true);
    let approx=new cv.Mat();
-   cv.approxPolyDP(c,approx,0.02*peri,true);
-   if(approx.rows==4){
-      let area=cv.contourArea(approx);
-      if(area>500){
-        let pts=[];
-        for(let j=0;j<4;j++){
-          pts.push({x:approx.intPtr(j,0)[0],y:approx.intPtr(j,0)[1]});
-        }
-        octx.beginPath();
-        octx.moveTo(pts[0].x,pts[0].y);
-        for(let k=1;k<4;k++)octx.lineTo(pts[k].x,pts[k].y);
-        octx.closePath();
-        octx.stroke();
-        count++;
-      }
+   cv.approxPolyDP(c,approx,0.02*cv.arcLength(c,true),true);
+
+   if(approx.rows===4 && cv.contourArea(approx)>500){
+      squares++;
+      ctx.beginPath();
+      ctx.moveTo(approx.intPtr(0,0)[0],approx.intPtr(0,0)[1]);
+      for(let j=1;j<4;j++)
+        ctx.lineTo(approx.intPtr(j,0)[0],approx.intPtr(j,0)[1]);
+      ctx.closePath();
+      ctx.stroke();
    }
-   approx.delete(); c.delete();
+   approx.delete();
+   c.delete();
  }
- document.getElementById("contours").innerHTML=count;
- let now=performance.now();
- document.getElementById("fps").innerHTML=(1000/(now-lastTime)).toFixed(1);
- lastTime=now;
- src.delete();gray.delete();thr.delete();contours.delete();hierarchy.delete();
+
+ dbg.textContent="Squares: "+squares;
+
+ src.delete();gray.delete();thr.delete();
+ contours.delete();hierarchy.delete();
+
  requestAnimationFrame(processFrame);
 }
 
+startCamera();
+startGPS();
 </script>
-
 </body>
-
 </html>
