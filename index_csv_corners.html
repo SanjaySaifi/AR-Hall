@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Uji Hazard Map – Live Location</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""/>
+
+<style>
+    html, body {
+        height: 100%;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #111;
+    }
+
+    #map {
+        width: 100%;
+        height: 100%;
+    }
+
+    .panel {
+        position: fixed;
+        z-index: 1000;
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        max-width: 360px;
+        padding: 14px;
+        background: rgba(255,255,255,.95);
+        border-radius: 12px;
+        box-shadow: 0 3px 15px rgba(0,0,0,.25);
+    }
+
+    .title {
+        font-size: 17px;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .status {
+        font-size: 13px;
+        line-height: 1.5;
+        margin-bottom: 10px;
+    }
+
+    button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 13px;
+        font-size: 14px;
+        font-weight: 600;
+        background: #1976d2;
+        color: white;
+        cursor: pointer;
+    }
+
+    button:active {
+        transform: scale(.98);
+    }
+
+    .leaflet-control-attribution {
+        font-size: 9px;
+    }
+
+    .location-dot {
+        width: 18px;
+        height: 18px;
+        background: #1677ff;
+        border: 3px solid white;
+        border-radius: 50%;
+        box-shadow: 0 0 0 2px rgba(22,119,255,.35), 0 2px 5px rgba(0,0,0,.35);
+    }
+
+    .accuracy {
+        background: rgba(22,119,255,.12);
+        border: 1px solid rgba(22,119,255,.4);
+        border-radius: 50%;
+    }
+
+    @media (max-width: 600px) {
+        .panel {
+            top: 8px;
+            left: 8px;
+            right: 8px;
+        }
+    }
+</style>
+</head>
+
+<body>
+<div id="map"></div>
+
+<div class="panel">
+    <div class="title">Uji Flood Hazard Map</div>
+    <div id="status" class="status">
+        Waiting for device location…
+    </div>
+    <button onclick="startLocation()">📍 Show My Location</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
+
+<script>
+// Load the four map corner coordinates from corners.csv.
+// CSV format:
+// id,lat,long
+// 1 = top-left
+// 2 = top-right
+// 3 = bottom-left
+// 4 = bottom-right
+
+async function loadMapCorners() {
+    try {
+        const response = await fetch("corners.csv");
+
+        if (!response.ok) {
+            throw new Error("Could not load corners.csv");
+        }
+
+        const csvText = await response.text();
+        const lines = csvText.trim().split(/\\r?\\n/);
+
+        if (lines.length < 5) {
+            throw new Error("corners.csv must contain a header and 4 corner points.");
+        }
+
+        // Read CSV rows.
+        const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+
+        const idIndex = headers.indexOf("id");
+        const latIndex = headers.indexOf("lat");
+        const lonIndex = headers.indexOf("long");
+
+        if (idIndex === -1 || latIndex === -1 || lonIndex === -1) {
+            throw new Error("CSV must contain columns: id, lat, long");
+        }
+
+        const points = {};
+
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(",").map(v => v.trim());
+
+            const id = parseInt(values[idIndex], 10);
+            const lat = parseFloat(values[latIndex]);
+            const lon = parseFloat(values[lonIndex]);
+
+            if (![1, 2, 3, 4].includes(id) || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+                continue;
+            }
+
+            points[id] = [lat, lon];
+        }
+
+        // Check that all four IDs are present.
+        for (const id of [1, 2, 3, 4]) {
+            if (!points[id]) {
+                throw new Error("Missing corner point with ID " + id);
+            }
+        }
+
+        // Assign points according to the requested ID convention:
+        // 1 = top-left
+        // 2 = top-right
+        // 3 = bottom-left
+        // 4 = bottom-right
+        const corners = {
+            "top left": points[1],
+            "top right": points[2],
+            "bottom left": points[3],
+            "bottom right": points[4]
+        };
+
+        // Leaflet imageOverlay uses a rectangular geographic bounding box.
+        // Therefore, the north-west (ID 1) and south-east (ID 4)
+        // coordinates define the image bounds.
+        const bounds = L.latLngBounds(
+            corners["top left"],
+            corners["bottom right"]
+        );
+
+        const map = L.map("map", {
+            zoomControl: true,
+            attributionControl: true
+        });
+
+        // Display the JPG as the geographic map.
+        const image = L.imageOverlay("map.jpg", bounds, {
+            opacity: 1.0,
+            interactive: false
+        }).addTo(map);
+
+        // Fit the complete map to the screen initially.
+        map.fitBounds(bounds);
+
+        // Prevent the user from zooming out farther than the full map view.
+        const minimumZoom = map.getZoom();
+        map.setMinZoom(minimumZoom);
+
+        // Keep the user from panning too far outside the map.
+        map.setMaxBounds(bounds.pad(0.02));
+
+        initializeLocation(map);
+
+    } catch (error) {
+        document.getElementById("status").innerHTML =
+            "<b>Error:</b> " + error.message +
+            "<br><br>Make sure <b>corners.csv</b> is in the same folder as this HTML file.";
+        console.error(error);
+    }
+}
+
+let locationMarker = null;
+let accuracyCircle = null;
+let watchId = null;
+let mapInstance = null;
+
+function initializeLocation(map) {
+    mapInstance = map;
+}
+
+function startLocation() {
+    if (!mapInstance) {
+        document.getElementById("status").innerHTML =
+            "Map is still loading. Please wait a moment.";
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        document.getElementById("status").innerHTML =
+            "Geolocation is not supported by this browser.";
+        return;
+    }
+
+    document.getElementById("status").innerHTML =
+        "Requesting GPS permission…";
+
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+    }
+
+    watchId = navigator.geolocation.watchPosition(
+        updateLocation,
+        locationError,
+        {
+            enableHighAccuracy: true,
+            maximumAge: 2000,
+            timeout: 15000
+        }
+    );
+}
+
+function updateLocation(position) {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+    const accuracy = position.coords.accuracy || 0;
+
+    const point = [lat, lon];
+
+    if (!locationMarker) {
+        const icon = L.divIcon({
+            className: "",
+            html: '<div class="location-dot"></div>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        locationMarker = L.marker(point, {
+            icon: icon,
+            zIndexOffset: 1000
+        }).addTo(mapInstance);
+
+        locationMarker.bindPopup("You are here");
+    } else {
+        locationMarker.setLatLng(point);
+    }
+
+    if (!accuracyCircle) {
+        accuracyCircle = L.circle(point, {
+            radius: accuracy,
+            className: "accuracy",
+            color: "#1677ff",
+            fillColor: "#1677ff",
+            fillOpacity: 0.10,
+            weight: 1
+        }).addTo(mapInstance);
+    } else {
+        accuracyCircle.setLatLng(point);
+        accuracyCircle.setRadius(accuracy);
+    }
+
+    document.getElementById("status").innerHTML =
+        "<b>Location active</b><br>" +
+        "Latitude: " + lat.toFixed(6) + "<br>" +
+        "Longitude: " + lon.toFixed(6) + "<br>" +
+        "GPS accuracy: ±" + Math.round(accuracy) + " m";
+
+    // Only move the map to the user the first time.
+    if (!updateLocation.hasCentered) {
+        mapInstance.setView(point, Math.max(mapInstance.getZoom(), 16));
+        updateLocation.hasCentered = true;
+    }
+}
+
+function locationError(error) {
+    let message = "Unable to obtain location.";
+
+    if (error.code === 1) {
+        message = "Location permission was denied. Please allow location access.";
+    } else if (error.code === 2) {
+        message = "Location is currently unavailable.";
+    } else if (error.code === 3) {
+        message = "GPS request timed out. Please try again.";
+    }
+
+    document.getElementById("status").innerHTML = message;
+}
+
+// Load the map corner coordinates when the page opens.
+loadMapCorners();
+</script>
+</body>
+</html>
