@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Uji Hazard Map – Live Location</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""/>
+
+<style>
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #111;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+.panel {
+    position: fixed;
+    z-index: 1000;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    max-width: 360px;
+    padding: 14px;
+    background: rgba(255,255,255,.95);
+    border-radius: 12px;
+    box-shadow: 0 3px 15px rgba(0,0,0,.25);
+}
+
+.title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.status {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+
+button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #1976d2;
+    color: white;
+    cursor: pointer;
+}
+
+button:active {
+    transform: scale(.98);
+}
+
+.leaflet-control-attribution {
+    font-size: 9px;
+}
+
+.location-dot {
+    width: 18px;
+    height: 18px;
+    background: #1677ff;
+    border: 3px solid white;
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 2px rgba(22,119,255,.35),
+        0 2px 5px rgba(0,0,0,.35);
+}
+
+@media (max-width: 600px) {
+    .panel {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<div class="panel">
+    <div class="title">Uji Flood Hazard Map</div>
+    <div id="status" class="status">Loading map coordinates...</div>
+    <button onclick="startLocation()">📍 Show My Location</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
+
+<script>
+let map = null;
+let locationMarker = null;
+let accuracyCircle = null;
+let watchId = null;
+
+/*
+ * Read the CSV header and find the columns by NAME.
+ *
+ * This is the important fix:
+ * Your actual CSV is:
+ *
+ * lat,long,id
+ * 34.9465896569,135.7859530338,1
+ * ...
+ *
+ * The previous code assumed:
+ *
+ * id,lat,long
+ *
+ * so it was reading latitude as the ID.
+ *
+ * This version works with either column order.
+ */
+function parseCSV(csvText) {
+
+    csvText = csvText.replace(/^\uFEFF/, "").trim();
+
+    const rows = csvText
+        .split(/\r?\n/)
+        .map(row => row.trim())
+        .filter(row => row.length > 0);
+
+    if (rows.length < 5) {
+        throw new Error("CSV must contain a header and four corner points.");
+    }
+
+    const header = rows[0]
+        .split(",")
+        .map(value =>
+            value.trim()
+                .replace(/^["']|["']$/g, "")
+                .toLowerCase()
+        );
+
+    const idIndex = header.indexOf("id");
+    const latIndex = header.indexOf("lat");
+    const longIndex = header.indexOf("long");
+
+    /*
+     * Also accept longitude/latitude spellings if used later.
+     */
+    const lonIndex =
+        longIndex >= 0
+            ? longIndex
+            : header.indexOf("lon");
+
+    const latitudeIndex =
+        latIndex >= 0
+            ? latIndex
+            : header.indexOf("latitude");
+
+    const longitudeIndex =
+        lonIndex >= 0
+            ? lonIndex
+            : header.indexOf("longitude");
+
+    if (idIndex < 0 || latitudeIndex < 0 || longitudeIndex < 0) {
+        throw new Error(
+            "CSV header must contain id, lat and long columns."
+        );
+    }
+
+    const points = {};
+
+    for (let i = 1; i < rows.length; i++) {
+
+        const columns = rows[i].split(",");
+
+        if (columns.length <= Math.max(
+            idIndex,
+            latitudeIndex,
+            longitudeIndex
+        )) {
+            continue;
+        }
+
+        const clean = value =>
+            value.trim().replace(/^["']|["']$/g, "");
+
+        const id = parseInt(
+            clean(columns[idIndex]),
+            10
+        );
+
+        const lat = parseFloat(
+            clean(columns[latitudeIndex])
+        );
+
+        const lon = parseFloat(
+            clean(columns[longitudeIndex])
+        );
+
+        if (
+            Number.isInteger(id) &&
+            Number.isFinite(lat) &&
+            Number.isFinite(lon)
+        ) {
+            points[id] = [lat, lon];
+        }
+    }
+
+    for (const id of [1, 2, 3, 4]) {
+        if (!points[id]) {
+            throw new Error(
+                "ID " + id + " is missing or invalid in corners.csv."
+            );
+        }
+    }
+
+    return points;
+}
+
+
+async function loadMap() {
+
+    const status = document.getElementById("status");
+
+    try {
+
+        status.innerHTML = "Loading corner coordinates...";
+
+        const response = await fetch(
+            "corners.csv",
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Could not load corners.csv. " +
+                "Make sure it is in the same folder as index.html."
+            );
+        }
+
+        const csvText = await response.text();
+
+        const points = parseCSV(csvText);
+
+        /*
+         * ID convention:
+         *
+         * 1 = Top Left
+         * 2 = Top Right
+         * 3 = Bottom Left
+         * 4 = Bottom Right
+         */
+
+        const topLeft = points[1];
+        const topRight = points[2];
+        const bottomLeft = points[3];
+        const bottomRight = points[4];
+
+        console.log("CSV corner points:");
+        console.log("ID 1 - Top Left:", topLeft);
+        console.log("ID 2 - Top Right:", topRight);
+        console.log("ID 3 - Bottom Left:", bottomLeft);
+        console.log("ID 4 - Bottom Right:", bottomRight);
+
+        /*
+         * Basic geographic validation.
+         */
+        if (topLeft[0] <= bottomLeft[0]) {
+            throw new Error(
+                "Corner coordinates are invalid: top latitude must be greater than bottom latitude."
+            );
+        }
+
+        if (topLeft[1] >= topRight[1]) {
+            throw new Error(
+                "Corner coordinates are invalid: left longitude must be less than right longitude."
+            );
+        }
+
+        /*
+         * Leaflet imageOverlay uses the northwest and southeast
+         * corners for a rectangular, north-up image.
+         */
+        const bounds = L.latLngBounds(
+            topLeft,
+            bottomRight
+        );
+
+        map = L.map("map", {
+            zoomControl: true,
+            attributionControl: true,
+            maxBoundsViscosity: 1.0
+        });
+
+        L.imageOverlay(
+            "map.jpg",
+            bounds,
+            {
+                opacity: 1.0,
+                interactive: false
+            }
+        ).addTo(map);
+
+        /*
+         * Fit the entire image to the screen.
+         */
+        map.fitBounds(bounds, {
+            padding: [5, 5]
+        });
+
+        /*
+         * Prevent zooming farther out than the full map.
+         */
+        map.setMinZoom(map.getZoom());
+
+        /*
+         * Prevent excessive panning outside the map.
+         */
+        map.setMaxBounds(bounds.pad(0.02));
+
+        status.innerHTML =
+            "<b>Map loaded successfully</b><br>" +
+            "Corners loaded from corners.csv";
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.innerHTML =
+            "<b>Error:</b><br>" +
+            error.message +
+            "<br><br>" +
+            "Run this folder using the included " +
+            "run_server.bat file or a local web server.";
+    }
+}
+
+
+function startLocation() {
+
+    if (!navigator.geolocation) {
+
+        document.getElementById("status").innerHTML =
+            "Geolocation is not supported by this browser.";
+
+        return;
+    }
+
+    document.getElementById("status").innerHTML =
+        "Requesting GPS permission...";
+
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+    }
+
+    watchId = navigator.geolocation.watchPosition(
+        updateLocation,
+        locationError,
+        {
+            enableHighAccuracy: true,
+            maximumAge: 2000,
+            timeout: 15000
+        }
+    );
+}
+
+
+function updateLocation(position) {
+
+    if (!map) return;
+
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+    const accuracy = position.coords.accuracy || 0;
+
+    const point = [lat, lon];
+
+    if (!locationMarker) {
+
+        const icon = L.divIcon({
+            className: "",
+            html: '<div class="location-dot"></div>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        locationMarker = L.marker(point, {
+            icon: icon,
+            zIndexOffset: 1000
+        }).addTo(map);
+
+        locationMarker.bindPopup("You are here");
+
+    } else {
+
+        locationMarker.setLatLng(point);
+    }
+
+    if (!accuracyCircle) {
+
+        accuracyCircle = L.circle(point, {
+            radius: accuracy,
+            color: "#1677ff",
+            fillColor: "#1677ff",
+            fillOpacity: 0.10,
+            weight: 1
+        }).addTo(map);
+
+    } else {
+
+        accuracyCircle.setLatLng(point);
+        accuracyCircle.setRadius(accuracy);
+    }
+
+    document.getElementById("status").innerHTML =
+        "<b>Location active</b><br>" +
+        "Latitude: " + lat.toFixed(6) + "<br>" +
+        "Longitude: " + lon.toFixed(6) + "<br>" +
+        "GPS accuracy: ±" + Math.round(accuracy) + " m";
+
+    /*
+     * Center on the user only the first time.
+     */
+    if (!updateLocation.hasCentered) {
+
+        map.setView(
+            point,
+            Math.max(map.getZoom(), 16)
+        );
+
+        updateLocation.hasCentered = true;
+    }
+}
+
+
+function locationError(error) {
+
+    let message = "Unable to obtain location.";
+
+    if (error.code === 1) {
+        message =
+            "Location permission was denied. " +
+            "Please allow location access.";
+    } else if (error.code === 2) {
+        message =
+            "Location is currently unavailable.";
+    } else if (error.code === 3) {
+        message =
+            "GPS request timed out. Please try again.";
+    }
+
+    document.getElementById("status").innerHTML = message;
+}
+
+
+/*
+ * Start the application.
+ */
+loadMap();
+
+</script>
+
+</body>
+</html>
