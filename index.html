@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Uji Hazard Map – Live Location</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""/>
+
+<style>
+html, body {
+    height: 100%;
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #111;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+.panel {
+    position: fixed;
+    z-index: 1000;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    max-width: 380px;
+    padding: 14px;
+    background: rgba(255,255,255,.96);
+    border-radius: 12px;
+    box-shadow: 0 3px 15px rgba(0,0,0,.25);
+}
+
+.title {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.status {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+
+button {
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    padding: 12px 13px;
+    margin-top: 4px;
+    font-size: 15px;
+    font-weight: 600;
+    background: #1976d2;
+    color: white;
+    cursor: pointer;
+}
+
+button:active {
+    transform: scale(.98);
+}
+
+#help {
+    display: none;
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #fff3cd;
+    color: #664d03;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.location-dot {
+    width: 18px;
+    height: 18px;
+    background: #1677ff;
+    border: 3px solid white;
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 2px rgba(22,119,255,.35),
+        0 2px 5px rgba(0,0,0,.35);
+}
+
+@media (max-width: 600px) {
+    .panel {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<div class="panel">
+    <div class="title">Uji Flood Hazard Map</div>
+
+    <div id="status" class="status">
+        Loading map...
+    </div>
+
+    <div id="help"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        crossorigin=""></script>
+
+<script>
+
+let map = null;
+let locationMarker = null;
+let accuracyCircle = null;
+let watchId = null;
+
+
+/* =========================================================
+   CSV READER
+   ========================================================= */
+
+function parseCSV(csvText) {
+
+    csvText = csvText.replace(/^\uFEFF/, "").trim();
+
+    const rows = csvText
+        .split(/\r?\n/)
+        .map(row => row.trim())
+        .filter(row => row.length > 0);
+
+    if (rows.length < 5) {
+        throw new Error("CSV must contain a header and four points.");
+    }
+
+    const header = rows[0].split(",").map(v =>
+        v.trim()
+         .replace(/^["']|["']$/g, "")
+         .toLowerCase()
+    );
+
+    const idIndex = header.indexOf("id");
+    const latIndex = header.indexOf("lat");
+    const longIndex = header.indexOf("long");
+
+    const lonIndex = longIndex >= 0
+        ? longIndex
+        : header.indexOf("lon");
+
+    const latitudeIndex = latIndex >= 0
+        ? latIndex
+        : header.indexOf("latitude");
+
+    const longitudeIndex = lonIndex >= 0
+        ? lonIndex
+        : header.indexOf("longitude");
+
+    if (
+        idIndex < 0 ||
+        latitudeIndex < 0 ||
+        longitudeIndex < 0
+    ) {
+        throw new Error(
+            "CSV header must contain id, lat and long."
+        );
+    }
+
+    const points = {};
+
+    for (let i = 1; i < rows.length; i++) {
+
+        const columns = rows[i].split(",");
+
+        const clean = value =>
+            value.trim().replace(/^["']|["']$/g, "");
+
+        const id = parseInt(
+            clean(columns[idIndex]),
+            10
+        );
+
+        const lat = parseFloat(
+            clean(columns[latitudeIndex])
+        );
+
+        const lon = parseFloat(
+            clean(columns[longitudeIndex])
+        );
+
+        if (
+            Number.isInteger(id) &&
+            Number.isFinite(lat) &&
+            Number.isFinite(lon)
+        ) {
+            points[id] = [lat, lon];
+        }
+    }
+
+    for (const id of [1, 2, 3, 4]) {
+        if (!points[id]) {
+            throw new Error(
+                "Corner ID " + id + " is missing."
+            );
+        }
+    }
+
+    return points;
+}
+
+
+/* =========================================================
+   LOAD MAP
+   ========================================================= */
+
+async function loadMap() {
+
+    const status =
+        document.getElementById("status");
+
+    try {
+
+        const response = await fetch(
+            "corners.csv",
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                "Could not load corners.csv."
+            );
+        }
+
+        const csvText =
+            await response.text();
+
+        const points =
+            parseCSV(csvText);
+
+        const topLeft = points[1];
+        const topRight = points[2];
+        const bottomLeft = points[3];
+        const bottomRight = points[4];
+
+        console.log("ID 1 Top Left:", topLeft);
+        console.log("ID 2 Top Right:", topRight);
+        console.log("ID 3 Bottom Left:", bottomLeft);
+        console.log("ID 4 Bottom Right:", bottomRight);
+
+        const bounds = L.latLngBounds(
+            topLeft,
+            bottomRight
+        );
+
+        map = L.map("map", {
+            zoomControl: true,
+            attributionControl: true,
+            maxBoundsViscosity: 1.0
+        });
+
+        L.imageOverlay(
+            "map.jpg",
+            bounds,
+            {
+                opacity: 1,
+                interactive: false
+            }
+        ).addTo(map);
+
+        map.fitBounds(bounds, {
+            padding: [5, 5]
+        });
+
+        map.setMinZoom(map.getZoom());
+
+        map.setMaxBounds(
+            bounds.pad(0.02)
+        );
+
+        status.innerHTML =
+            "<b>Map ready</b><br>" +
+            "Tap 'Enable My Location'.";
+
+    } catch (error) {
+
+        console.error(error);
+
+        status.innerHTML =
+            "<b>Map loading error</b><br>" +
+            error.message;
+    }
+}
+
+
+/* =========================================================
+   CHECK BROWSER LOCATION PERMISSION
+   ========================================================= */
+
+async function checkLocationPermission() {
+
+    if (!navigator.permissions) {
+        return "unknown";
+    }
+
+    try {
+
+        const permission =
+            await navigator.permissions.query({
+                name: "geolocation"
+            });
+
+        return permission.state;
+
+    } catch (error) {
+
+        return "unknown";
+    }
+}
+
+
+/* =========================================================
+   REQUEST LOCATION
+   ========================================================= */
+
+async function requestLocation() {
+
+    const status =
+        document.getElementById("status");
+
+    const help =
+        document.getElementById("help");
+
+    help.style.display = "none";
+
+    /*
+     * Chrome requires a secure context for geolocation:
+     * HTTPS or localhost.
+     */
+    if (
+        location.protocol !== "https:" &&
+        location.hostname !== "localhost" &&
+        location.hostname !== "127.0.0.1"
+    ) {
+
+        status.innerHTML =
+            "<b>Secure connection required</b>";
+
+        help.innerHTML =
+            "Chrome requires HTTPS for location access on mobile. " +
+            "Please open this page using an HTTPS website.";
+
+        help.style.display = "block";
+
+        return;
+    }
+
+    if (!navigator.geolocation) {
+
+        status.innerHTML =
+            "<b>GPS is not supported</b>";
+
+        help.innerHTML =
+            "This browser does not provide location access.";
+
+        help.style.display = "block";
+
+        return;
+    }
+
+    status.innerHTML =
+        "Requesting your location...";
+
+    /*
+     * Request location immediately when the page loads.
+     * Chrome will show its location permission prompt
+     * when permission has not previously been decided.
+     */
+    navigator.geolocation.getCurrentPosition(
+        function(position) {
+
+            startLocationWatch(position);
+
+        },
+
+        function(error) {
+
+            handleLocationError(error);
+
+        },
+
+        {
+            enableHighAccuracy: true,
+            timeout: 20000,
+            maximumAge: 0
+        }
+    );
+}
+
+
+/* =========================================================
+   START CONTINUOUS LOCATION WATCH
+   ========================================================= */
+
+function startLocationWatch(firstPosition) {
+
+    updateLocation(firstPosition);
+
+    if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+    }
+
+    watchId =
+        navigator.geolocation.watchPosition(
+            updateLocation,
+            locationError,
+            {
+                enableHighAccuracy: true,
+                timeout: 20000,
+                maximumAge: 2000
+            }
+        );
+}
+
+
+/* =========================================================
+   UPDATE LOCATION
+   ========================================================= */
+
+function updateLocation(position) {
+
+    if (!map) return;
+
+    const lat =
+        position.coords.latitude;
+
+    const lon =
+        position.coords.longitude;
+
+    const accuracy =
+        position.coords.accuracy || 0;
+
+    const point = [lat, lon];
+
+
+    if (!locationMarker) {
+
+        const icon = L.divIcon({
+
+            className: "",
+
+            html:
+                '<div class="location-dot"></div>',
+
+            iconSize: [24, 24],
+
+            iconAnchor: [12, 12]
+        });
+
+        locationMarker =
+            L.marker(point, {
+                icon: icon,
+                zIndexOffset: 1000
+            }).addTo(map);
+
+        locationMarker.bindPopup(
+            "You are here"
+        );
+
+    } else {
+
+        locationMarker.setLatLng(point);
+    }
+
+
+    if (!accuracyCircle) {
+
+        accuracyCircle =
+            L.circle(point, {
+                radius: accuracy,
+                color: "#1677ff",
+                fillColor: "#1677ff",
+                fillOpacity: 0.10,
+                weight: 1
+            }).addTo(map);
+
+    } else {
+
+        accuracyCircle.setLatLng(point);
+        accuracyCircle.setRadius(accuracy);
+    }
+
+
+    document.getElementById("status").innerHTML =
+        "<b>Location active</b><br>" +
+        "Latitude: " +
+        lat.toFixed(6) +
+        "<br>" +
+        "Longitude: " +
+        lon.toFixed(6) +
+        "<br>" +
+        "GPS accuracy: ±" +
+        Math.round(accuracy) +
+        " m";
+
+
+    if (!updateLocation.hasCentered) {
+
+        map.setView(
+            point,
+            Math.max(map.getZoom(), 16)
+        );
+
+        updateLocation.hasCentered = true;
+    }
+}
+
+
+/* =========================================================
+   ERROR HANDLING
+   ========================================================= */
+
+async function handleLocationError(error) {
+
+    const status =
+        document.getElementById("status");
+
+    const help =
+        document.getElementById("help");
+
+    if (error.code === 1) {
+
+        status.innerHTML =
+            "<b>Location permission denied.</b>";
+
+        help.innerHTML =
+            "Chrome has blocked location access for this site. " +
+            "Open Chrome site settings and set Location to " +
+            "<b>Allow</b>, then reload the page and tap the " +
+            "button again.";
+
+        help.style.display = "block";
+
+    } else if (error.code === 2) {
+
+        status.innerHTML =
+            "<b>Location unavailable.</b>";
+
+        help.innerHTML =
+            "Turn on Location/GPS on your phone and make sure " +
+            "Chrome is allowed to use your device location.";
+
+        help.style.display = "block";
+
+    } else if (error.code === 3) {
+
+        status.innerHTML =
+            "<b>GPS timed out.</b>";
+
+        help.innerHTML =
+            "Move to an area with better GPS reception and try again.";
+
+        help.style.display = "block";
+
+    } else {
+
+        status.innerHTML =
+            "<b>Could not obtain location.</b>";
+
+        help.innerHTML =
+            "Please check Chrome's location permission and " +
+            "your phone's Location/GPS setting.";
+
+        help.style.display = "block";
+    }
+}
+
+
+function locationError(error) {
+    handleLocationError(error);
+}
+
+
+/* =========================================================
+   LOAD APPLICATION
+   ========================================================= */
+
+loadMap();
+
+</script>
+
+</body>
+</html>
