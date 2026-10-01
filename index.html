@@ -106,12 +106,7 @@ button:active {
     <div id="status" class="status">
         Loading map...
     </div>
-
-    <button id="locationButton" onclick="requestLocation()">
-        📍 Enable My Location
-    </button>
-
-    <div id="help"></div>
+<div id="help"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -287,7 +282,7 @@ async function loadMap() {
 
         status.innerHTML =
             "<b>Map ready</b><br>" +
-            "Tap 'Enable My Location'.";
+            "Requesting your location...";
 
     } catch (error) {
 
@@ -334,11 +329,7 @@ async function requestLocation() {
 
     const status =
         document.getElementById("status");
-
-    const button =
-        document.getElementById("locationButton");
-
-    const help =
+const help =
         document.getElementById("help");
 
     help.style.display = "none";
@@ -358,8 +349,7 @@ async function requestLocation() {
 
         help.innerHTML =
             "Chrome allows GPS only from a secure website. " +
-            "Open this page using HTTPS (for example your " +
-            "HTTPS-hosted website), then tap the button again.";
+            "Open this page using HTTPS on your mobile device.";
 
         help.style.display = "block";
 
@@ -379,12 +369,7 @@ async function requestLocation() {
 
         return;
     }
-
-
-    button.disabled = true;
-    button.innerHTML = "📍 Requesting Location...";
-
-    status.innerHTML =
+status.innerHTML =
         "Please allow location access when Chrome asks.";
 
 
@@ -402,20 +387,10 @@ async function requestLocation() {
              * Start continuous tracking.
              */
             startLocationWatch(position);
-
-            button.disabled = false;
-            button.innerHTML =
-                "📍 Location Active";
-
-        },
+},
 
         async function(error) {
-
-            button.disabled = false;
-            button.innerHTML =
-                "📍 Enable My Location";
-
-            await handleLocationError(error);
+await handleLocationError(error);
         },
 
         {
@@ -535,10 +510,11 @@ function updateLocation(position) {
 
     if (!updateLocation.hasCentered) {
 
-        map.setView(
-            point,
-            Math.max(map.getZoom(), 16)
-        );
+        const userZoom = Math.max(map.getZoom(), 17);
+
+        map.setView(point, userZoom, {
+            animate: true
+        });
 
         updateLocation.hasCentered = true;
     }
@@ -614,7 +590,9 @@ function locationError(error) {
    LOAD APPLICATION
    ========================================================= */
 
-loadMap();
+loadMap().then(function() {
+    requestLocation();
+});
 
 </script>
 
